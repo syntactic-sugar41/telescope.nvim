@@ -91,10 +91,10 @@ function Sorter:_start(prompt)
   local len_previous = #previous
 
   if #prompt < len_previous then
-    log.debug("Reset discard because shorter prompt")
+    log.trace("Reset discard because shorter prompt")
     self._discard_state.filtered = {}
   elseif string.sub(prompt, 1, len_previous) ~= previous then
-    log.debug("Reset discard no match")
+    log.trace("Reset discard no match")
     self._discard_state.filtered = {}
   end
 

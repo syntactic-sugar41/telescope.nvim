@@ -15,10 +15,12 @@ return function(opts)
 
     local command = table.remove(command_list, 1)
 
-    return {
+    local res = {
       command = command,
       args = command_list,
     }
+    P(res)
+    return res
   end
 
   local job
@@ -55,12 +57,17 @@ return function(opts)
         stdout = stdout,
       }
 
+      print("starting...)", job)
+
       for line in stdout:iter() do
-        if process_result(entry_maker(line)) then
-          return
-        end
+        print("line", line)
+        process_result(entry_maker(line))
+        -- if ) then
+        --   return
+        -- end
       end
 
+      print("DONE!")
       process_complete()
     end,
   })
