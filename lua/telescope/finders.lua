@@ -127,15 +127,16 @@ end
 
 -- TODO(MERGE): Gotta fix this
 function DynamicFinder:_find(prompt, process_result, process_complete)
-  a.scope(function()
-    local results = await(self.fn(prompt))
+  assert(false, "Have not implemented this part yet. Sorry")
+  -- a.scope(function()
+  --   local results = await(self.fn(prompt))
 
-    for _, result in ipairs(results) do
-      if process_result(self.entry_maker(result)) then return end
-    end
+  --   for _, result in ipairs(results) do
+  --     if process_result(self.entry_maker(result)) then return end
+  --   end
 
-    process_complete()
-  end)
+  --   process_complete()
+  -- end)
 end
 
 --- Return a new Finder
