@@ -357,6 +357,8 @@ function Picker:find()
   local tx, rx = channel.mpsc()
   self.__on_lines = tx.send
 
+  local find_id = self:_next_find_id()
+
   local main_loop = async.void(function()
     self.sorter:_init()
 
@@ -412,7 +414,6 @@ function Picker:find()
       self.sorter:_start(prompt)
       self.manager = EntryManager:new(self.max_results, self.entry_adder, self.stats)
 
-      local find_id = self:_next_find_id()
       local process_result = self:get_result_processor(find_id, prompt, debounced_status)
       local process_complete = self:get_result_completor(self.results_bufnr, find_id, prompt, status_updater)
 
@@ -428,7 +429,10 @@ function Picker:find()
 
   -- Register attach
   vim.api.nvim_buf_attach(prompt_bufnr, false, {
-    on_lines = tx.send,
+    on_lines = function(...)
+      find_id = self:_next_find_id()
+      tx.send(...)
+    end,
     on_detach = function() self:_detach() end,
   })
 
@@ -979,12 +983,7 @@ function Picker:get_result_processor(find_id, prompt, status_updater)
   end
 
   return function(entry)
-    if find_id ~= self._find_id
-        or self.closed
-        or self:is_done()
-        or self:_get_prompt() ~= prompt
-        then
-
+    if find_id ~= self._find_id then
       return true
     end
 
