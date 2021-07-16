@@ -1,7 +1,7 @@
 local log = require('telescope.log')
 
-local async_job = R('plenary.async_job')
-local LinesPipe = R('plenary.async_job.pipes').LinesPipe
+local async_job = require('plenary.async_job')
+local LinesPipe = require('plenary.async_job.pipes').LinesPipe
 
 local make_entry = require('telescope.make_entry')
 
