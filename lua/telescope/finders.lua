@@ -2,8 +2,6 @@ local Job = require('plenary.job')
 
 local make_entry = require('telescope.make_entry')
 local log = require('telescope.log')
-local a = require('plenary.async_lib')
-local await = a.await
 
 local async_static_finder = require('telescope.finders.async_static_finder')
 local async_oneshot_finder = require('telescope.finders.async_oneshot_finder')
@@ -127,6 +125,7 @@ function DynamicFinder:new(opts)
   return obj
 end
 
+-- TODO(MERGE): Gotta fix this
 function DynamicFinder:_find(prompt, process_result, process_complete)
   a.scope(function()
     local results = await(self.fn(prompt))
@@ -149,11 +148,10 @@ finders._new = function(opts)
   return JobFinder:new(opts)
 end
 
-finders.new_job = function(command_generator, entry_maker, maximum_results, cwd)
+finders.new_job = function(command_generator, entry_maker, _, cwd)
   return async_job_finder {
     command_generator = command_generator,
     entry_maker = entry_maker,
-    maximum_results = maximum_results,
     cwd = cwd,
   }
 

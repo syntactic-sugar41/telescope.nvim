@@ -1,13 +1,11 @@
+require('telescope')
+
 local a = vim.api
 local popup = require('popup')
 
 local async = require('plenary.async')
-local async_util = async.util
-
+local await_schedule = async.util.scheduler
 local channel = require('plenary.async.control').channel
-local await_schedule = async_util.scheduler
-
-require('telescope')
 
 local actions = require('telescope.actions')
 local action_set = require('telescope.actions.set')
@@ -74,7 +72,7 @@ function Picker:new(opts)
     get_status_text = get_default(opts.get_status_text, config.values.get_status_text),
     _on_input_filter_cb = opts.on_input_filter_cb or function() end,
 
-    finder = opts.finder,
+    finder = assert(opts.finder, "Finder is required."),
     sorter = opts.sorter or require('telescope.sorters').empty(),
 
     all_previewers = opts.previewer,
@@ -225,7 +223,7 @@ function Picker:highlight_displayed_rows(results_bufnr, prompt)
 end
 
 function Picker:highlight_one_row(results_bufnr, prompt, display, row)
-  local highlights = self:_track("_highlight_time", self.sorter.highlighter, self.sorter, prompt, display)
+  local highlights = self.sorter:highlighter(prompt, display)
 
   if highlights then
     for _, hl in ipairs(highlights) do
@@ -277,8 +275,6 @@ end
 function Picker:find()
   self:close_existing_pickers()
   self:reset_selection()
-
-  assert(self.finder, "Finder is required to do picking")
 
   self.original_win_id = a.nvim_get_current_win()
 
@@ -349,25 +345,39 @@ function Picker:find()
   self.prompt_prefix = prompt_prefix
   self:_reset_prefix_color()
 
-  -- Temporarily disabled: Draw the screen ASAP. This makes things feel speedier.
-  -- vim.cmd [[redraw]]
-
   -- First thing we want to do is set all the lines to blank.
   self.max_results = popup_opts.results.height
 
+  -- TODO(scrolling): This may be a hack when we get a little further into implementing scrolling.
   vim.api.nvim_buf_set_lines(results_bufnr, 0, self.max_results, false, utils.repeated_table(self.max_results, ""))
 
   local status_updater = self:get_status_updater(prompt_win, prompt_bufnr)
   local debounced_status = debounce.throttle_leading(status_updater, 50)
-  -- local debounced_status = status_updater
 
   local tx, rx = channel.mpsc()
   self.__on_lines = tx.send
 
   local main_loop = async.void(function()
-    while true do
-      await_schedule()
+    self.sorter:_init()
 
+    -- Do filetype last, so that users can register at the last second.
+    pcall(a.nvim_buf_set_option, prompt_bufnr, 'filetype', 'TelescopePrompt')
+
+    if self.default_text then
+      self:set_prompt(self.default_text)
+    end
+
+    if self.initial_mode == "insert" then
+      vim.cmd [[startinsert!]]
+    elseif self.initial_mode ~= "normal" then
+      error("Invalid setting for initial_mode: " .. self.initial_mode)
+    end
+
+    -- TODO: It seems like we shouldn't need to do this
+    await_schedule()
+
+    while true do
+      -- TODO: For some reason this seems not to wor super great
       local _, _, _, first_line, last_line = rx.last()
       self:_reset_track()
 
@@ -384,20 +394,22 @@ function Picker:find()
         return
       end
 
-      local original_prompt = self:_get_prompt()
-      local on_input_result = self._on_input_filter_cb(original_prompt) or {}
+      local prompt = self:_get_prompt()
 
-      local prompt = on_input_result.prompt or original_prompt
-      local finder = on_input_result.updated_finder
+      local on_input_result = self._on_input_filter_cb(prompt) or {}
 
-      if finder then
-        self.finder:close()
-        self.finder = finder
+      local new_prompt = on_input_result.prompt
+      if new_prompt then
+        prompt = new_prompt
       end
 
-      if self.sorter then self.sorter:_start(prompt) end
+      local new_finder = on_input_result.updated_finder
+      if new_finder then
+        self.finder:close()
+        self.finder = new_finder
+      end
 
-      -- TODO: Entry manager should have a "bulk" setter. This can prevent a lot of redraws from display
+      self.sorter:_start(prompt)
       self.manager = EntryManager:new(self.max_results, self.entry_adder, self.stats)
 
       local find_id = self:_next_find_id()
@@ -405,11 +417,11 @@ function Picker:find()
       local process_complete = self:get_result_completor(self.results_bufnr, find_id, prompt, status_updater)
 
       local ok, msg = pcall(function()
-        self.finder(prompt, process_result, vim.schedule_wrap(process_complete))
+        self.finder(prompt, process_result, process_complete)
       end)
 
       if not ok then
-        log.warn("Failed with msg: ", msg)
+        log.warn("Finder failed with msg: ", msg)
       end
     end
   end)
@@ -417,23 +429,8 @@ function Picker:find()
   -- Register attach
   vim.api.nvim_buf_attach(prompt_bufnr, false, {
     on_lines = tx.send,
-    on_detach = function()
-      -- TODO: Can we add a "cleanup" / "teardown" function that completely removes these.
-      self.finder = nil
-      self.previewer = nil
-      self.sorter = nil
-      self.manager = nil
-
-      self.closed = true
-
-      -- TODO: Should we actually do this?
-      collectgarbage(); collectgarbage()
-    end,
+    on_detach = function() self:_detach() end,
   })
-
-  if self.sorter then self.sorter:_init() end
-  main_loop()
-  status_updater()
 
   -- TODO: Use WinLeave as well?
   local on_buf_leave = string.format(
@@ -468,18 +465,7 @@ function Picker:find()
 
   mappings.apply_keymap(prompt_bufnr, self.attach_mappings, config.values.mappings)
 
-  -- Do filetype last, so that users can register at the last second.
-  pcall(a.nvim_buf_set_option, prompt_bufnr, 'filetype', 'TelescopePrompt')
-
-  if self.default_text then
-    self:set_prompt(self.default_text)
-  end
-
-  if self.initial_mode == "insert" then
-    vim.cmd [[startinsert!]]
-  elseif self.initial_mode ~= "normal" then
-    error("Invalid setting for initial_mode: " .. self.initial_mode)
-  end
+  main_loop()
 end
 
 function Picker:hide_preview()
@@ -918,23 +904,6 @@ function Picker:_reset_track()
   self.stats.highlights = 0
 end
 
-function Picker:_track(key, func, ...)
-  local start, final
-  if self.track then
-    start = vim.loop.hrtime()
-  end
-
-  -- Hack... we just do this so that we can track stuff that returns two values.
-  local res1, res2 = func(...)
-
-  if self.track then
-    final = vim.loop.hrtime()
-    self.stats[key] = final - start + self.stats[key]
-  end
-
-  return res1, res2
-end
-
 function Picker:_increment(key)
   self.stats[key] = (self.stats[key] or 0) + 1
 end
@@ -942,7 +911,6 @@ end
 function Picker:_decrement(key)
   self.stats[key] = (self.stats[key] or 0) - 1
 end
-
 
 -- TODO: Decide how much we want to use this.
 --  Would allow for better debugging of items.
@@ -1013,7 +981,11 @@ function Picker:get_result_processor(find_id, prompt, status_updater)
   return function(entry)
     if find_id ~= self._find_id
         or self.closed
-        or self:is_done() then
+        or self:is_done()
+        or self:_get_prompt() ~= prompt
+        then
+
+      print("Cancelling result:", self)
       return true
     end
 
@@ -1043,6 +1015,8 @@ end
 
 function Picker:get_result_completor(results_bufnr, find_id, prompt, status_updater)
   return function()
+    await_schedule()
+
     if self.closed == true or self:is_done() then return end
 
     local selection_strategy = self.selection_strategy or 'reset'
@@ -1148,6 +1122,16 @@ end
 
 function Picker:_reset_highlights()
   self.highlighter:clear_display()
+end
+
+function Picker:_detach()
+  -- TODO: Can we add a "cleanup" / "teardown" function that completely removes these.
+  -- self.finder = nil
+  -- self.previewer = nil
+  -- self.sorter = nil
+  -- self.manager = nil
+
+  self.closed = true
 end
 
 pickers._Picker = Picker

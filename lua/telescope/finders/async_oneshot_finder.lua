@@ -51,7 +51,7 @@ return function(opts)
       end
 
       if not job_completed then
-        for line in stdout:iter(false) do
+        for line in stdout:iter(true) do
           num_results = num_results + 1
 
           local v = entry_maker(line)

@@ -19,7 +19,9 @@ return function(opts)
       command = command,
       args = command_list,
     }
-    P(res)
+
+    TelescopeLastGrep = res
+
     return res
   end
 
@@ -27,13 +29,13 @@ return function(opts)
   return setmetatable({
     close = function() 
       if job then
-        job:close()
+        job:close(true)
       end
     end,
   }, {
     __call = function(_, prompt, process_result, process_complete)
       if job then
-        job:close()
+        job:close(true)
       end
 
       local job_opts = fn_command(prompt)
@@ -57,17 +59,15 @@ return function(opts)
         stdout = stdout,
       }
 
-      print("starting...)", job)
+      for line in stdout:iter(true) do
+        -- require("plenary.async").util.sleep(10)
 
-      for line in stdout:iter() do
-        print("line", line)
-        process_result(entry_maker(line))
-        -- if ) then
-        --   return
-        -- end
+        if process_result(entry_maker(line)) then
+          -- assert(false, "PLEASE BREAK")
+          return
+        end
       end
 
-      print("DONE!")
       process_complete()
     end,
   })

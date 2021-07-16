@@ -64,7 +64,7 @@ files.live_grep = function(opts)
         return nil
       end
 
-      prompt = escape_chars(prompt)
+      -- prompt = escape_chars(prompt)
 
       local search_list = {}
 
@@ -89,7 +89,7 @@ files.live_grep = function(opts)
     prompt_title = 'Live Grep',
     finder = live_grepper,
     previewer = conf.grep_previewer(opts),
-    sorter = conf.generic_sorter(opts),
+    -- sorter = conf.generic_sorter(opts),
   }):find()
 end
 
