@@ -985,7 +985,6 @@ function Picker:get_result_processor(find_id, prompt, status_updater)
         or self:_get_prompt() ~= prompt
         then
 
-      print("Cancelling result:", self)
       return true
     end
 
