@@ -351,6 +351,11 @@ function Picker:find()
   -- TODO(scrolling): This may be a hack when we get a little further into implementing scrolling.
   vim.api.nvim_buf_set_lines(results_bufnr, 0, self.max_results, false, utils.repeated_table(self.max_results, ""))
 
+  -- TODO(status): I would love to get the status text not moving back and forth. Perhaps it is just a problem with
+  -- virtual text & prompt buffers or something though. I can't figure out why it would redraw the way it does.
+  --
+  -- A "hacked" version of this would be to calculate where the area I want the status to go and put a new window there.
+  -- With this method, I do not need to worry about padding or antying, just make it take up X characters or something.
   local status_updater = self:get_status_updater(prompt_win, prompt_bufnr)
   local debounced_status = debounce.throttle_leading(status_updater, 50)
 
@@ -365,6 +370,8 @@ function Picker:find()
     -- Do filetype last, so that users can register at the last second.
     pcall(a.nvim_buf_set_option, prompt_bufnr, 'filetype', 'TelescopePrompt')
 
+    -- TODO(async): I wonder if this should actually happen _before_ we nvim_buf_attach.
+    -- This way the buffer would always start with what we think it should when we start the loop.
     if self.default_text then
       self:set_prompt(self.default_text)
     end
@@ -375,7 +382,6 @@ function Picker:find()
       error("Invalid setting for initial_mode: " .. self.initial_mode)
     end
 
-    -- TODO: It seems like we shouldn't need to do this
     await_schedule()
 
     while true do
@@ -431,6 +437,10 @@ function Picker:find()
   vim.api.nvim_buf_attach(prompt_bufnr, false, {
     on_lines = function(...)
       find_id = self:_next_find_id()
+
+      self._result_completed = false
+      status_updater { completed = false }
+
       tx.send(...)
     end,
     on_detach = function() self:_detach() end,
@@ -935,10 +945,9 @@ function Picker:close_existing_pickers()
 end
 
 function Picker:get_status_updater(prompt_win, prompt_bufnr)
-  return function()
-    local text = self:get_status_text()
+  return function(opts)
     if self.closed or not vim.api.nvim_buf_is_valid(prompt_bufnr) then return end
-    local current_prompt = vim.api.nvim_buf_get_lines(prompt_bufnr, 0, 1, false)[1]
+    local current_prompt = self:_get_prompt()
     if not current_prompt then
       return
     end
@@ -947,10 +956,11 @@ function Picker:get_status_updater(prompt_win, prompt_bufnr)
       return
     end
 
+    local text = self:get_status_text(opts)
     local prompt_len = #current_prompt
 
-    local padding = string.rep(" ", vim.api.nvim_win_get_width(prompt_win) - prompt_len - #text - 3)
-    vim.api.nvim_buf_clear_namespace(prompt_bufnr, ns_telescope_prompt, 0, 1)
+    local padding = string.rep(" ", vim.api.nvim_win_get_width(prompt_win) - prompt_len - #text )
+    vim.api.nvim_buf_clear_namespace(prompt_bufnr, ns_telescope_prompt, 0, -1)
     vim.api.nvim_buf_set_virtual_text(
       prompt_bufnr,
       ns_telescope_prompt,
@@ -975,7 +985,7 @@ end
 function Picker:get_result_processor(find_id, prompt, status_updater)
   local cb_add = function(score, entry)
     self.manager:add_entry(self, score, entry)
-    status_updater()
+    status_updater { completed = false }
   end
 
   local cb_filter = function(_)
@@ -1014,57 +1024,59 @@ end
 function Picker:get_result_completor(results_bufnr, find_id, prompt, status_updater)
   return function()
     await_schedule()
-
     if self.closed == true or self:is_done() then return end
 
-    local selection_strategy = self.selection_strategy or 'reset'
+    self:_do_selection()
 
-    -- TODO: Either: always leave one result or make sure we actually clean up the results when nothing matches
-    if selection_strategy == 'row' then
-      if self._selection_row == nil and self.default_selection_index ~= nil then
-        self:set_selection(self:get_row(self.default_selection_index))
-      else
-        self:set_selection(self:get_selection_row())
-      end
-    elseif selection_strategy == 'follow' then
-      if self._selection_row == nil and self.default_selection_index ~= nil then
-        self:set_selection(self:get_row(self.default_selection_index))
-      else
-        local index = self.manager:find_entry(self:get_selection())
-
-        if index then
-          local follow_row = self:get_row(index)
-          self:set_selection(follow_row)
-        else
-          self:set_selection(self:get_reset_row())
-        end
-      end
-    elseif selection_strategy == 'reset' then
-      if self.default_selection_index ~= nil then
-        self:set_selection(self:get_row(self.default_selection_index))
-      else
-        self:set_selection(self:get_reset_row())
-      end
-    elseif selection_strategy == 'closest' then
-      if prompt == "" and self.default_selection_index ~= nil then
-        self:set_selection(self:get_row(self.default_selection_index))
-      else
-        self:set_selection(self:get_reset_row())
-      end
-    else
-      error('Unknown selection strategy: ' .. selection_strategy)
-    end
-
-    local current_line = vim.api.nvim_get_current_line():sub(self.prompt_prefix:len() + 1)
-    state.set_global_key('current_line', current_line)
-
-    status_updater()
+    state.set_global_key('current_line', self:_get_prompt())
+    status_updater { completed = true }
 
     self:clear_extra_rows(results_bufnr)
     self:highlight_displayed_rows(results_bufnr, prompt)
-    if self.sorter then self.sorter:_finish(prompt) end
+    self.sorter:_finish(prompt)
 
     self:_on_complete()
+
+    self._result_completed = true
+  end
+end
+
+function Picker:_do_selection()
+  local selection_strategy = self.selection_strategy or 'reset'
+  -- TODO: Either: always leave one result or make sure we actually clean up the results when nothing matches
+  if selection_strategy == 'row' then
+    if self._selection_row == nil and self.default_selection_index ~= nil then
+      self:set_selection(self:get_row(self.default_selection_index))
+    else
+      self:set_selection(self:get_selection_row())
+    end
+  elseif selection_strategy == 'follow' then
+    if self._selection_row == nil and self.default_selection_index ~= nil then
+      self:set_selection(self:get_row(self.default_selection_index))
+    else
+      local index = self.manager:find_entry(self:get_selection())
+
+      if index then
+        local follow_row = self:get_row(index)
+        self:set_selection(follow_row)
+      else
+        self:set_selection(self:get_reset_row())
+      end
+    end
+  elseif selection_strategy == 'reset' then
+    if self.default_selection_index ~= nil then
+      self:set_selection(self:get_row(self.default_selection_index))
+    else
+      self:set_selection(self:get_reset_row())
+    end
+  elseif selection_strategy == 'closest' then
+    if prompt == "" and self.default_selection_index ~= nil then
+      self:set_selection(self:get_row(self.default_selection_index))
+    else
+      self:set_selection(self:get_reset_row())
+    end
+  else
+    error('Unknown selection strategy: ' .. selection_strategy)
   end
 end
 

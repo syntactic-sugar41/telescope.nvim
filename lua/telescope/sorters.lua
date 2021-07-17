@@ -452,6 +452,9 @@ sorters.get_fzy_sorter = function(opts)
   }
 end
 
+-- TODO: Could probably do something nice where we check their conf
+--          and choose their default for this.
+--          But I think `fzy` is good default for now.
 sorters.highlighter_only = function(opts)
   opts = opts or {}
   local fzy = opts.fzy_mod or require('telescope.algos.fzy')
