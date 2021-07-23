@@ -203,14 +203,14 @@ local telescope_defaults = {
         return ""
       end
 
-      local status_icon
-      if opts.completed then
-        status_icon = "✔️"
-      else
-        status_icon = "*"
-      end
+      -- local status_icon
+      -- if opts.completed then
+      --   status_icon = "✔️"
+      -- else
+      --   status_icon = "*"
+      -- end
 
-      return string.format("%s / %s %s", xx, yy, status_icon)
+      return string.format("%s / %s", xx, yy)
     end,
   },
 
