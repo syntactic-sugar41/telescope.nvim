@@ -1135,6 +1135,8 @@ function Picker:_reset_highlights()
 end
 
 function Picker:_detach()
+  self.finder:close()
+
   -- TODO: Can we add a "cleanup" / "teardown" function that completely removes these.
   -- self.finder = nil
   -- self.previewer = nil
