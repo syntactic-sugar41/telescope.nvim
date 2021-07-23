@@ -67,6 +67,7 @@ function Picker:new(opts)
     selection_caret = get_default(opts.selection_caret, config.values.selection_caret),
     entry_prefix = get_default(opts.entry_prefix, config.values.entry_prefix),
     initial_mode = get_default(opts.initial_mode, config.values.initial_mode),
+    debounce = get_default(tonumber(opts.debounce), nil),
 
     default_text = opts.default_text,
     get_status_text = get_default(opts.get_status_text, config.values.get_status_text),
@@ -385,8 +386,9 @@ function Picker:find()
     await_schedule()
 
     while true do
-      -- TODO: For some reason this seems not to wor super great
-      local _, _, _, first_line, last_line = rx.last()
+      -- Wait for the next input
+      rx.last()
+
       self:_reset_track()
 
       if not vim.api.nvim_buf_is_valid(prompt_bufnr) then
@@ -394,16 +396,9 @@ function Picker:find()
         return
       end
 
-      if not first_line then first_line = 0 end
-      if not last_line then last_line = 1 end
-
-      if first_line > 0 or last_line > 1 then
-        log.debug("ON_LINES: Bad range", first_line, last_line, self:_get_prompt())
-        return
-      end
+      local start_time = vim.loop.hrtime()
 
       local prompt = self:_get_prompt()
-
       local on_input_result = self._on_input_filter_cb(prompt) or {}
 
       local new_prompt = on_input_result.prompt
@@ -429,6 +424,11 @@ function Picker:find()
 
       if not ok then
         log.warn("Finder failed with msg: ", msg)
+      end
+
+      local diff_time = (vim.loop.hrtime() - start_time) / 1e6
+      if self.debounce and diff_time < self.debounce then
+        async.util.sleep(self.debounce - diff_time)
       end
     end
   end)
@@ -479,6 +479,7 @@ function Picker:find()
 
   mappings.apply_keymap(prompt_bufnr, self.attach_mappings, config.values.mappings)
 
+  tx.send()
   main_loop()
 end
 

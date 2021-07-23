@@ -145,6 +145,10 @@ finders._new = function(opts)
   return JobFinder:new(opts)
 end
 
+finders.new_async_job = function(opts)
+  return async_job_finder(opts)
+end
+
 finders.new_job = function(command_generator, entry_maker, _, cwd)
   return async_job_finder {
     command_generator = command_generator,
