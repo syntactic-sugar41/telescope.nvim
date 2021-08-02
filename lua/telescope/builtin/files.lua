@@ -276,6 +276,7 @@ local function prepare_match(entry, kind)
   return entries
 end
 
+
 files.file_browser = function(opts)
   opts = opts or {}
 
@@ -354,7 +355,7 @@ files.file_browser = function(opts)
     end
 
   pickers.new(opts, {
-    prompt_title = "File Browser",
+    prompt_title = opts.title or "File Browser",
     finder = opts.new_finder(opts.cwd),
     previewer = conf.file_previewer(opts),
     sorter = conf.file_sorter(opts),
@@ -408,6 +409,39 @@ files.file_browser = function(opts)
     end,
   }):find()
 end
+
+local projects = function(opts)
+    opts.cwd = "~/dev/" .. opts.project
+    opts.title =  string.upper(opts.project)
+
+    files.file_browser(opts)
+end
+
+files.auto = function(opts)
+    opts.project = "automaton"
+    projects(opts)
+end
+
+files.data = function(opts)
+    opts.project = "data"
+    projects(opts)
+end
+
+files.sdk = function(opts)
+    opts.project = "sdk"
+    projects(opts)
+end
+
+files.casual = function(opts)
+    opts.project = "casual-tech"
+    projects(opts)
+end
+
+files.tech = function(opts)
+    opts.project = "tech"
+    projects(opts)
+end
+
 
 --  TODO: finish docs for opts.show_line
 files.treesitter = function(opts)

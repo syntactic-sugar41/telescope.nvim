@@ -72,6 +72,12 @@ local builtin = {}
 ---@field search_dirs table: directory/directories to search in, mutually exclusive with `grep_open_files`
 builtin.live_grep = require("telescope.builtin.files").live_grep
 
+builtin.auto = require("telescope.builtin.files").auto
+builtin.data = require("telescope.builtin.files").data
+builtin.casual = require("telescope.builtin.files").casual
+builtin.tech = require("telescope.builtin.files").tech
+builtin.sdk = require("telescope.builtin.files").sdk
+
 --- Searches for the string under your cursor in your current working directory
 ---@param opts table: options to pass to the picker
 ---@field search string: the query to search

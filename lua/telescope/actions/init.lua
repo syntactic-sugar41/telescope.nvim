@@ -792,6 +792,16 @@ actions.delete_buffer = function(prompt_bufnr)
   end)
 end
 
+actions.open_session = function(prompt_bufnr)
+    local current_picker = action_state.get_current_picker(prompt_bufnr)
+    actions.close(prompt_bufnr)
+    local entry = current_picker:get_selection().value
+    local home = vim.api.nvim_exec('echo $HOME', true)
+    local session_name = string.gsub(string.sub(entry, string.len(home) + 2, -2), '/', '_')
+    local cmd = 'SessionLoad ' .. session_name
+    vim.cmd(cmd)
+end
+
 --- Cycle to the next previewer if there is one available.<br>
 --- This action is not mapped on default.
 ---@param prompt_bufnr number: The prompt bufnr
